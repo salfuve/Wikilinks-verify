@@ -5,7 +5,9 @@ import * as glob from 'glob';
 let directory = process.argv[2]; // wiki directory
 let remark = require('remark');
 let links: string[] = [];
+let linkFile: string[] = [];
 let external_links: string[] = []
+let linkExternalFile: string[] = [];
 
 /**Read each asciidoc of the directory where the wiki has been cloned and call the function getlinks to iterate for each asciidoc */
 glob(directory + '*asciidoc', async function (err: any, files: any) {
@@ -18,13 +20,14 @@ glob(directory + '*asciidoc', async function (err: any, files: any) {
                     if (link.indexOf('http:') >= 0 || link.indexOf('https:') >= 0) {
                         if (!(external_links.indexOf(link) > 0)) {
                             external_links.push(link);
+                            linkExternalFile.push(file);
                         }
                     }
                     else {
                         if (!(links.indexOf(link) > 0)) {
-                            links.push(link)
+                            links.push(link);
+                            linkFile.push(file);
                         }
-
                     }
                 })
             })
@@ -40,8 +43,14 @@ glob(directory + '*asciidoc', async function (err: any, files: any) {
 
 function exitCode(code1: boolean, code2: boolean) {
 
-    if (code1 && code2) { process.exitCode = 0 }
-    else { console.log(process.exitCode = 1) }
+    if (code1 && code2) {
+        console.log('DONE: exit code 0 ')
+        process.exit();
+    }
+    else {
+        console.log('DONE: Some link failed, exit code 1 ')
+        process.exit(1);
+    }
 
 }
 
@@ -54,7 +63,7 @@ async function sendRequest(link: string): Promise<boolean> {
             head(req).
             end(function (err: any, res: request.Response) {
                 if (res == undefined) {
-                    console.log(link + " " + res)
+                    console.log(link + " " + 'site cant be reached')
                 }
                 else {
                     response = res.status
@@ -63,7 +72,7 @@ async function sendRequest(link: string): Promise<boolean> {
                     }
                     else {
                         if (response == 404) {
-                            console.log(link + " -->" + response)
+                            console.log('\x1b[31m', linkExternalFile[external_links.indexOf(link)] + " --->" + link + " -->" + response, '\x1b[0m')
                             resolve(false);
                             return;
                         }
@@ -88,9 +97,11 @@ function getLinks(childOfChild: any): string[] {
                     case 'text':
                         let str = subChild.value
                         if (str.indexOf('link:') >= 0) {
-                            links.push(getLinkValue(str))
+                            if (str.startsWith("//") == false) {
+                                links.push(getLinkValue(str))
+                            }
                         }
-                        else if (str.indexOf('image::') >= 0) {
+                        else if ((str.indexOf('image::images') >= 0) && (str.startsWith("//") == false)) {
                             links.push(getImageValue(str))
                         }
                     default:
@@ -105,34 +116,38 @@ function getLinks(childOfChild: any): string[] {
 function fixLink(link: string) {
     if (link.indexOf('[') >= 0) {
         return link.substring(0, link.indexOf('['));
-    } else {
-        return link;
+
+    } else if (link.indexOf("'") > 0) {
+        return link.substring(0, link.indexOf("'"));
     }
+    else if (link.indexOf('"') > 0) {
+        return link.substring(0, link.indexOf('"'));
+    }
+    else return link;
 }
+
 function getLinkValue(link: string) {
 
-    return link.substring(link.indexOf(':') + 1)
+    return link.substring(link.indexOf('link:') + 5)
 }
 function getImageValue(link: string) {
     return link.substring(link.indexOf('images'))
 }
 /**Verify the links */
 async function checkLinks(eLinks: string[]) {
-    let code = true;
-    for (let i = 0; i < eLinks.length; i++) {
-        code = await sendRequest(eLinks[i])
-    }
-    return code;
+
+    if (eLinks.length === 0) process.exit(1);
+    let code = await Promise.all(eLinks.map(sendRequest));
+    return code.reduce((a, b) => a && b);
 }
 async function checkInternalLinks(Ilinks: string[]) {
     let adoc = '.asciidoc';
     let code = true;
     for (let i = 0; i < Ilinks.length; i++) {
-
         if (Ilinks[i].indexOf('#') > 0) {
             let str = (Ilinks[i].substring(0, Ilinks[i].indexOf('#')))
             if (!(fs.existsSync(directory + str + adoc))) {
-                console.log(directory + str + adoc + ' False')
+                console.log('\x1b[31m', linkFile[links.indexOf(Ilinks[i])] + " ---> " + directory + str + adoc + ' False', '\x1b[0m')
                 code = false
             }
         }
@@ -140,7 +155,8 @@ async function checkInternalLinks(Ilinks: string[]) {
 
             if (!(fs.existsSync(directory + Ilinks[i])) && !(fs.existsSync(directory + Ilinks[i] + '.asciidoc'))) {
                 code = false;
-                console.log(directory + Ilinks[i] + ' False')
+                console.log('\x1b[31m', linkFile[links.indexOf(Ilinks[i])] + " ---> " + directory + Ilinks[i] + ' False', '\x1b[0m')
+
             }
         }
     }
