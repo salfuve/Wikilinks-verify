@@ -6,6 +6,7 @@ Get all the links of the asciidocs of a certain wiki and check them, show the li
 - Install the dependencies 
     npm install
 - Open a console:
+
     `ts-node ./src/index.ts ./path-of-the-wiki/ `
 # Output
  Incorrect links
